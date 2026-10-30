@@ -24,10 +24,12 @@
 
 namespace videoprogresssource_kinescope\privacy;
 
+use core_privacy\local\metadata\null_provider;
+
 /**
  * This subplugin persists no personal information of its own.
  */
-class provider implements \core_privacy\local\metadata\null_provider {
+class provider implements null_provider {
     /**
      * Explains the lack of locally stored data.
      *

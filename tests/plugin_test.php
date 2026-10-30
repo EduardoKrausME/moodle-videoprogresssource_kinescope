@@ -24,12 +24,15 @@
 
 namespace videoprogresssource_kinescope;
 
+use advanced_testcase;
+use moodle_exception;
+
 /**
  * Tests canonicalization and validation of untrusted Kinescope links.
  *
  * @covers \videoprogresssource_kinescope\plugin
  */
-final class plugin_test extends \advanced_testcase {
+final class plugin_test extends advanced_testcase {
     /**
      * Public and private URLs are normalized without untrusted URL components.
      */
@@ -74,7 +77,7 @@ final class plugin_test extends \advanced_testcase {
      */
     public function test_invalid_persisted_config(): void {
         $plugin = new plugin();
-        $this->expectException(\moodle_exception::class);
+        $this->expectException(moodle_exception::class);
         $plugin->get_legacy_value(['id' => 'invalid/path', 'hash' => '']);
     }
 
