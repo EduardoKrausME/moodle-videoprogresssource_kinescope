@@ -1,0 +1,209 @@
+/*
+ * Kinescope Player API adapter for Video Bridge.
+ * @module videoprogresssource_kinescope/player
+ * @copyright 2026 Eduardo Kraus
+ * @license http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+define(['local_video_bridge/progress'], function(Progress) {
+    let apiPromise = null;
+    let nextId = 0;
+
+    const loadApi = (url) => {
+        if (!apiPromise) {
+            apiPromise = new Promise((resolve, reject) => {
+                const previous = window.onKinescopeIframeAPIReady;
+                window.onKinescopeIframeAPIReady = (factory) => {
+                    try {
+                        if (typeof previous === 'function') {
+                            previous(factory);
+                        }
+                    } finally {
+                        resolve(factory);
+                    }
+                };
+                const script = document.createElement('script');
+                script.src = url;
+                script.async = true;
+                script.onerror = () => {
+                    window.onKinescopeIframeAPIReady = previous;
+                    apiPromise = null;
+                    reject(new Error('Unable to load Kinescope IFrame Player API.'));
+                };
+                document.head.appendChild(script);
+            });
+        }
+        return apiPromise;
+    };
+
+    const finite = (value, fallback = 0) => {
+        const number = Number(value);
+        return Number.isFinite(number) && number >= 0 ? number : fallback;
+    };
+
+    class KinescopeAdapter {
+        constructor(root, config) {
+            this.root = root;
+            this.config = config;
+            this.handlers = {};
+            this.current = 0;
+            this.previous = 0;
+            this.duration = 0;
+            this.rate = 1;
+            this.player = null;
+        }
+
+        initialise() {
+            const container = this.root.querySelector('[data-region="kinescope-player"]');
+            if (!container) {
+                return Promise.reject(new Error('Kinescope player container was not found.'));
+            }
+            let id;
+            do {
+                id = 'videoprogress-kinescope-' + (++nextId);
+            } while (document.getElementById(id));
+            container.id = id;
+
+            return loadApi(this.config.apiurl).then((factory) =>
+                factory.create(id, {
+                    url: this.config.url,
+                    size: {width: '100%', height: '100%'},
+                    behavior: {localStorage: {time: false}},
+                })
+            ).then((player) => {
+                this.player = player;
+                const events = player.Events;
+                player.on(events.Playing, () => {
+                    this.emit('play');
+                    this.emit('playing');
+                });
+                player.on(events.Pause, () => this.emit('pause'));
+                player.on(events.Waiting, () => this.emit('waiting'));
+                player.on(events.Ended, () => {
+                    if (this.duration > 0) {
+                        this.current = this.duration;
+                        this.emit('timeupdate', this.current);
+                    }
+                    this.emit('ended');
+                });
+                player.on(events.Loaded, (event) => {
+                    const data = event.data || {};
+                    this.current = finite(data.currentTime, this.current);
+                    this.duration = finite(data.duration, this.duration);
+                    this.updateRate();
+                });
+                player.on(events.DurationChange, (event) => {
+                    this.duration = finite((event.data || {}).duration, this.duration);
+                });
+                player.on(events.TimeUpdate, (event) => {
+                    const data = event.data || {};
+                    this.previous = this.current;
+                    this.current = finite(data.currentTime, this.current);
+                    this.emit('timeupdate', this.current);
+                });
+                player.on(events.Seeked, () => {
+                    const before = this.previous;
+                    player.getCurrentTime().then((position) => {
+                        this.current = finite(position, this.current);
+                        this.emit('seek', this.current, before);
+                        this.emit('timeupdate', this.current);
+                    }).catch(() => this.emit('seek', this.current, before));
+                });
+                player.on(events.PlaybackRateChange, (event) => {
+                    this.rate = finite((event.data || {}).playbackRate, this.rate) || 1;
+                    const max = finite(this.config.maxplaybackrate);
+                    if (max > 0 && this.rate > max) {
+                        player.setPlaybackRate(max).catch(() => {});
+                        this.rate = max;
+                    }
+                    this.emit('ratechange', this.rate);
+                });
+                Promise.all([
+                    player.getCurrentTime(),
+                    player.getDuration(),
+                    player.getPlaybackRate(),
+                ]).then((values) => {
+                    this.current = finite(values[0], this.current);
+                    this.duration = finite(values[1], this.duration);
+                    this.rate = finite(values[2], this.rate) || 1;
+                }).catch(() => {});
+                return this;
+            });
+        }
+
+        updateRate() {
+            this.player.getPlaybackRate().then((rate) => {
+                this.rate = finite(rate, this.rate) || 1;
+            }).catch(() => {});
+        }
+
+        play() {
+            return this.player.play();
+        }
+
+        pause() {
+            return this.player.pause();
+        }
+
+        getCurrentTime() {
+            return this.current;
+        }
+
+        getDuration() {
+            return this.duration;
+        }
+
+        getPlaybackRate() {
+            return this.rate;
+        }
+
+        seek(position) {
+            const target = Math.max(0, finite(position));
+            return this.player.seekTo(target).then(() => target);
+        }
+
+        onPlay(handler) {
+            this.on('play', handler);
+        }
+
+        onPause(handler) {
+            this.on('pause', handler);
+        }
+
+        onTimeUpdate(handler) {
+            this.on('timeupdate', handler);
+        }
+
+        onSeek(handler) {
+            this.on('seek', handler);
+        }
+
+        onEnded(handler) {
+            this.on('ended', handler);
+        }
+
+        onRateChange(handler) {
+            this.on('ratechange', handler);
+        }
+
+        onWaiting(handler) {
+            this.on('waiting', handler);
+        }
+
+        onPlaying(handler) {
+            this.on('playing', handler);
+        }
+
+        on(event, callback) {
+            this.handlers[event] = (this.handlers[event] || []).concat(callback);
+        }
+
+        emit(event, ...args) {
+            (this.handlers[event] || []).forEach((callback) => callback(...args));
+        }
+    }
+
+    const create = (root, config) => new KinescopeAdapter(root, config).initialise()
+        .then((adapter) => Progress.attach(adapter, root, config));
+
+    return {create: create};
+});
