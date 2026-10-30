@@ -51,10 +51,10 @@ class plugin extends plugin_base {
      * @return void
      */
     public function add_form_elements(MoodleQuickForm $mform, string $sourcefield): void {
-        $mform->addElement('url', 'kinescopeurl',
+        $mform->addElement('text', 'kinescopeurl',
             get_string('videourl', 'videoprogresssource_kinescope'),
-            ['size' => 80], ['usefilepicker' => false]);
-        $mform->setType('kinescopeurl', PARAM_URL);
+            ['size' => 80]);
+        $mform->setType('kinescopeurl', PARAM_TEXT);
         $mform->addHelpButton('kinescopeurl', 'videourl', 'videoprogresssource_kinescope');
         $mform->hideIf('kinescopeurl', $sourcefield, 'neq', 'kinescope');
     }
