@@ -24,7 +24,7 @@
 
 defined('MOODLE_INTERNAL') || die;
 
-$plugin->version = 2026103000;
+$plugin->version = 2026110100;
 $plugin->release = '1.0.0';
 $plugin->component = 'videoprogresssource_kinescope';
 $plugin->requires = 2024100700;
